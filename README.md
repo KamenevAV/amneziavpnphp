@@ -20,7 +20,7 @@ Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/infosave2007/amneziavpnphp.git
 cd amnezia-web-panel
 cp .env.example .env
 docker compose up -d
