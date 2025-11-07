@@ -820,7 +820,40 @@ Router::get('/api/clients/{id}/details', function ($params) {
                 'bytes_sent' => $clientData['bytes_sent'],
                 'bytes_received' => $clientData['bytes_received'],
                 'last_handshake' => $clientData['last_handshake'],
+                'config' => $clientData['config'],
+                'qr_code' => $clientData['qr_code'],
             ]
+        ]);
+    } catch (Exception $e) {
+        http_response_code(404);
+        echo json_encode(['error' => 'Client not found']);
+    }
+});
+
+// API: Get client QR code
+Router::get('/api/clients/{id}/qr', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = JWT::requireAuth();
+    if (!$user) return;
+    
+    $clientId = (int)$params['id'];
+    
+    try {
+        $client = new VpnClient($clientId);
+        $clientData = $client->getData();
+        
+        // Check ownership
+        if ($clientData['user_id'] != $user['id']) {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'qr_code' => $clientData['qr_code'],
+            'client_name' => $clientData['name']
         ]);
     } catch (Exception $e) {
         http_response_code(404);
@@ -968,7 +1001,20 @@ Router::post('/api/clients/create', function () {
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
         
-        echo json_encode(['client' => $clientData]);
+        // Return client data with config and QR code
+        echo json_encode([
+            'success' => true,
+            'client' => [
+                'id' => $clientData['id'],
+                'name' => $clientData['name'],
+                'server_id' => $clientData['server_id'],
+                'client_ip' => $clientData['client_ip'],
+                'status' => $clientData['status'],
+                'created_at' => $clientData['created_at'],
+                'config' => $clientData['config'],
+                'qr_code' => $clientData['qr_code'],
+            ]
+        ]);
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);

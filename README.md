@@ -99,8 +99,9 @@ GET    /api/servers/{id}/clients    - List clients on server
 ### Clients
 ```
 GET    /api/clients                 - List all clients
-GET    /api/clients/{id}/details    - Get client details with stats
-POST   /api/clients/create          - Create new client
+GET    /api/clients/{id}/details    - Get client details with stats, config and QR code
+GET    /api/clients/{id}/qr         - Get client QR code
+POST   /api/clients/create          - Create new client (returns config and QR code)
        Parameters: server_id, name
 POST   /api/clients/{id}/revoke     - Revoke client access
 POST   /api/clients/{id}/restore    - Restore client access
