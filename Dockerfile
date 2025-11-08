@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     sshpass \
     openssh-client \
     qrencode \
+    cron \
     && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd \
     && a2enmod rewrite \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -35,7 +36,19 @@ COPY apache.conf /etc/apache2/sites-available/000-default.conf
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/public
 
+# Setup cron for client expiration check (runs every hour)
+RUN echo "0 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/check_expired_clients.php >> /var/log/cron.log 2>&1" > /etc/cron.d/amnezia-cron \
+    && chmod 0644 /etc/cron.d/amnezia-cron \
+    && crontab /etc/cron.d/amnezia-cron \
+    && touch /var/log/cron.log
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+service cron start\n\
+apache2-foreground' > /start.sh \
+    && chmod +x /start.sh
+
 # Expose port 80
 EXPOSE 80
 
-CMD ["apache2-foreground"]
+CMD ["/start.sh"]
