@@ -689,15 +689,11 @@ class VpnClient {
     }
     
     /**
-     * Format bytes to human-readable string
+     * Format bytes to human-readable string (always in MB)
      */
     private function formatBytes(int $bytes): string {
-        if ($bytes === 0) return '0 B';
-        
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $i = floor(log($bytes) / log(1024));
-        
-        return round($bytes / pow(1024, $i), 2) . ' ' . $units[$i];
+        $mb = $bytes / 1048576; // 1024 * 1024
+        return number_format($mb, 2) . ' MB';
     }
     
     /**

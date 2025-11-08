@@ -6,19 +6,19 @@
   
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded shadow p-6">
-      <h3 class="font-bold mb-4">Client Configuration</h3>
+      <h3 class="font-bold mb-4">{{ t('clients.configuration') }}</h3>
       <dl class="space-y-2 mb-4">
-        <div><dt class="text-sm text-gray-600">IP Address</dt><dd>{{ client.client_ip }}</dd></div>
-        <div><dt class="text-sm text-gray-600">Status</dt>
+        <div><dt class="text-sm text-gray-600">{{ t('common.ip_address') }}</dt><dd>{{ client.client_ip }}</dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('common.status') }}</dt>
           <dd>
             {% if client.status == 'active' %}
-              <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">Active</span>
+              <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">{{ t('status.active') }}</span>
             {% else %}
-              <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">Disabled</span>
+              <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{{ t('status.disabled') }}</span>
             {% endif %}
           </dd>
         </div>
-        <div><dt class="text-sm text-gray-600">Created</dt><dd>{{ client.created_at }}</dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('common.created') }}</dt><dd>{{ client.created_at }}</dd></div>
       </dl>
       <div class="flex gap-2">
         <a href="/clients/{{ client.id }}/download" class="gradient-bg text-white px-4 py-2 rounded">
@@ -42,16 +42,16 @@
     
     <div class="bg-white rounded shadow p-6">
       <div class="flex justify-between items-center mb-4">
-        <h3 class="font-bold">Traffic Statistics</h3>
+        <h3 class="font-bold">{{ t('clients.traffic_stats') }}</h3>
         <button onclick="syncStats({{ client.id }})" class="text-purple-600 hover:text-purple-800 text-sm">
           <i class="fas fa-sync-alt"></i> Refresh
         </button>
       </div>
       <dl class="space-y-2" id="stats">
-        <div><dt class="text-sm text-gray-600">Uploaded</dt><dd id="stat-sent">{{ client.bytes_sent|default(0)|number_format }} B</dd></div>
-        <div><dt class="text-sm text-gray-600">Downloaded</dt><dd id="stat-received">{{ client.bytes_received|default(0)|number_format }} B</dd></div>
-        <div><dt class="text-sm text-gray-600">Total</dt><dd id="stat-total">{{ (client.bytes_sent|default(0) + client.bytes_received|default(0))|number_format }} B</dd></div>
-        <div><dt class="text-sm text-gray-600">Last Handshake</dt>
+        <div><dt class="text-sm text-gray-600">{{ t('common.uploaded') }}</dt><dd id="stat-sent">{{ (client.bytes_sent|default(0) / 1048576)|number_format(2) }} MB</dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('common.downloaded') }}</dt><dd id="stat-received">{{ (client.bytes_received|default(0) / 1048576)|number_format(2) }} MB</dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('common.total') }}</dt><dd id="stat-total">{{ ((client.bytes_sent|default(0) + client.bytes_received|default(0)) / 1048576)|number_format(2) }} MB</dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('clients.last_handshake') }}</dt>
           <dd id="stat-last-seen">
             {% if client.last_handshake %}
               {{ client.last_handshake }}

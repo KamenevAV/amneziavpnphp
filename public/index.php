@@ -19,6 +19,7 @@ require_once __DIR__ . '/../inc/VpnClient.php';
 require_once __DIR__ . '/../inc/Translator.php';
 require_once __DIR__ . '/../inc/JWT.php';
 require_once __DIR__ . '/../inc/PanelImporter.php';
+require_once __DIR__ . '/../inc/ServerMonitoring.php';
 
 // Load environment configuration
 Config::load(__DIR__ . '/../.env');
@@ -47,6 +48,29 @@ Translator::init();
 // Initialize template engine
 $user = Auth::user();
 $appName = Config::get('APP_NAME', 'Amnezia VPN Panel');
+
+/**
+ * Helper function to authenticate user from JWT or session
+ * Returns user array or null if unauthorized
+ */
+function authenticateRequest(): ?array {
+    // Check JWT token in Authorization header
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if ($authHeader && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        $token = $matches[1];
+        $user = JWT::verify($token);
+        if ($user) {
+            return $user;
+        }
+    }
+    
+    // Fallback to session
+    if (isset($_SESSION['user_id'])) {
+        return Auth::user();
+    }
+    
+    return null;
+}
 
 View::init(__DIR__ . '/../templates', [
     'app_name' => $appName,
@@ -418,6 +442,36 @@ Router::get('/servers/{id}', function ($params) {
         error_log('Server view error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
         http_response_code(404);
         echo 'Server not found: ' . htmlspecialchars($e->getMessage());
+    }
+});
+
+// Server monitoring page
+Router::get('/servers/{id}/monitoring', function ($params) {
+    requireAuth();
+    $serverId = (int)$params['id'];
+    
+    try {
+        $server = new VpnServer($serverId);
+        $serverData = $server->getData();
+        
+        // Check ownership
+        $user = Auth::user();
+        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+            http_response_code(403);
+            echo 'Forbidden';
+            return;
+        }
+        
+        // Get clients for this server
+        $clients = VpnClient::listByServer($serverId);
+        
+        View::render('servers/monitoring.twig', [
+            'server' => $serverData,
+            'clients' => $clients,
+        ]);
+    } catch (Exception $e) {
+        http_response_code(404);
+        echo 'Server not found';
     }
 });
 
@@ -1272,12 +1326,112 @@ Router::post('/api/clients/{id}/restore', function ($params) {
     }
 });
 
+// API: Get server metrics
+Router::get('/api/servers/{id}/metrics', function ($params) {
+    header('Content-Type: application/json');
+    
+    // Check authentication - either JWT or session
+    $user = null;
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    
+    if ($authHeader && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        // JWT authentication
+        $token = $matches[1];
+        $user = JWT::verify($token);
+    } else if (isset($_SESSION['user_id'])) {
+        // Session authentication
+        $user = Auth::user();
+    }
+    
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized']);
+        return;
+    }
+    
+    $serverId = (int)$params['id'];
+    $hours = isset($_GET['hours']) ? (float)$_GET['hours'] : 24;
+    
+    try {
+        $server = new VpnServer($serverId);
+        $serverData = $server->getData();
+        
+        // Check ownership
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        $metrics = ServerMonitoring::getServerMetrics($serverId, $hours);
+        
+        echo json_encode(['success' => true, 'metrics' => $metrics]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// API: Get client metrics
+Router::get('/api/clients/{id}/metrics', function ($params) {
+    header('Content-Type: application/json');
+    
+    // Check authentication - either JWT or session
+    $user = null;
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    
+    if ($authHeader && preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
+        // JWT authentication
+        $token = $matches[1];
+        $user = JWT::verify($token);
+    } else if (isset($_SESSION['user_id'])) {
+        // Session authentication
+        $user = Auth::user();
+    }
+    
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized']);
+        return;
+    }
+    
+    $clientId = (int)$params['id'];
+    $hours = isset($_GET['hours']) ? (float)$_GET['hours'] : 24;
+    
+    try {
+        $client = new VpnClient($clientId);
+        $clientData = $client->getData();
+        
+        // Get server to check ownership
+        $server = new VpnServer($clientData['server_id']);
+        $serverData = $server->getData();
+        
+        // Check ownership
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        $metrics = ServerMonitoring::getClientMetrics($clientId, $hours);
+        
+        echo json_encode(['success' => true, 'metrics' => $metrics]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
 // API: Get server clients
 Router::get('/api/servers/{id}/clients', function ($params) {
     header('Content-Type: application/json');
     
-    $user = JWT::requireAuth();
-    if (!$user) return;
+    $user = authenticateRequest();
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['error' => 'Unauthorized']);
+        return;
+    }
     
     $serverId = (int)$params['id'];
     
@@ -1286,8 +1440,7 @@ Router::get('/api/servers/{id}/clients', function ($params) {
         $serverData = $server->getData();
         
         // Check ownership
-        $user = Auth::user();
-        if ($serverData['user_id'] != $user['id'] && !Auth::isAdmin()) {
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
             http_response_code(403);
             echo json_encode(['error' => 'Forbidden']);
             return;

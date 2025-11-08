@@ -1,8 +1,50 @@
 {% extends "layout.twig" %}
 {% block title %}{{ server.name }}{% endblock %}
+
+{% block styles %}
+<style>
+.metric-mini {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+.metric-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.metric-icon {
+    width: 24px;
+    text-align: center;
+    font-size: 14px;
+}
+.metric-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    min-width: 60px;
+}
+.metric-chart {
+    height: 30px;
+    flex: 1;
+    min-width: 0;
+}
+.metric-value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #111827;
+    min-width: 70px;
+    text-align: right;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-7xl mx-auto px-4 py-8">
-  <div class="mb-6"><h1 class="text-3xl font-bold">{{ server.name }}</h1><p class="text-gray-600">{{ server.host }}</p></div>
+  <div class="mb-6">
+    <h1 class="text-3xl font-bold">{{ server.name }}</h1>
+    <p class="text-gray-600">{{ server.host }}</p>
+  </div>
   
   {% if import_message %}
   <div class="mb-6 {% if import_message.type == 'success' %}bg-green-50 border-green-400 text-green-700{% else %}bg-red-50 border-red-400 text-red-700{% endif %} border px-4 py-3 rounded">
@@ -13,12 +55,41 @@
   
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
     <div class="bg-white rounded shadow p-6">
-      <h3 class="font-bold mb-4">Server Info</h3>
+      <h3 class="font-bold mb-4">{{ t('servers.server_info') }}</h3>
       <dl class="space-y-2">
-        <div><dt class="text-sm text-gray-600">Status</dt><dd><span class="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">{{ server.status }}</span></dd></div>
+        <div><dt class="text-sm text-gray-600">{{ t('common.status') }}</dt><dd><span class="px-2 py-1 bg-green-100 text-green-800 rounded text-sm">{{ server.status }}</span></dd></div>
         <div><dt class="text-sm text-gray-600">VPN Port</dt><dd>{{ server.vpn_port }}</dd></div>
         <div><dt class="text-sm text-gray-600">Subnet</dt><dd>{{ server.vpn_subnet }}</dd></div>
       </dl>
+      
+      {% if server.status == 'active' %}
+      <div class="metric-mini" id="serverMetrics">
+        <div class="metric-row">
+          <i class="fas fa-microchip metric-icon" style="color:#dc3545"></i>
+          <span class="metric-label">CPU</span>
+          <canvas id="cpuSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="cpuValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-memory metric-icon" style="color:#ffc107"></i>
+          <span class="metric-label">RAM</span>
+          <canvas id="ramSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="ramValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-hdd metric-icon" style="color:#17a2b8"></i>
+          <span class="metric-label">Disk</span>
+          <canvas id="diskSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="diskValue">--</div>
+        </div>
+        <div class="metric-row">
+          <i class="fas fa-network-wired metric-icon" style="color:#28a745"></i>
+          <span class="metric-label">Network</span>
+          <canvas id="networkSparkline" class="metric-chart"></canvas>
+          <div class="metric-value" id="networkValue">--</div>
+        </div>
+      </div>
+      {% endif %}
     </div>
     <div class="bg-white rounded shadow p-6">
       <h3 class="font-bold mb-4">{{ t('clients.create') }}</h3>
@@ -97,6 +168,7 @@
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.expiration') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic_limit') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('common.speed') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.last_handshake') }}</th>
           <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.actions') }}</th>
         </tr>
@@ -163,6 +235,9 @@
             {% else %}
               <span class="text-gray-400">{{ t('clients.unlimited') }}</span>
             {% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm">
+            <div id="client-speed-{{ client.id }}" class="text-gray-400">-</div>
           </td>
           <td class="px-6 py-4 text-sm">
             {% if client.last_handshake %}
@@ -431,5 +506,204 @@ async function deleteBackup(backupId) {
     alert('Error: ' + error.message);
   }
 }
+
+// Server metrics sparklines
+{% if server.status == 'active' %}
+const serverId = {{ server.id }};
+let sparklineCharts = {};
+
+function initSparklines() {
+  const chartConfig = {
+    type: 'line',
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: false }
+      },
+      scales: {
+        x: { display: false },
+        y: { display: false, beginAtZero: true }
+      },
+      elements: {
+        line: { borderWidth: 2, tension: 0.4 },
+        point: { radius: 0 }
+      }
+    }
+  };
+  
+  sparklineCharts.cpu = new Chart(document.getElementById('cpuSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#dc3545',
+        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+        fill: true
+      }]
+    },
+    options: {
+      ...chartConfig.options,
+      scales: {
+        ...chartConfig.options.scales,
+        y: { display: false, beginAtZero: true, max: 100 }
+      }
+    }
+  });
+  
+  sparklineCharts.ram = new Chart(document.getElementById('ramSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#ffc107',
+        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+        fill: true
+      }]
+    }
+  });
+  
+  sparklineCharts.disk = new Chart(document.getElementById('diskSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#17a2b8',
+        backgroundColor: 'rgba(23, 162, 184, 0.1)',
+        fill: true
+      }]
+    }
+  });
+  
+  sparklineCharts.network = new Chart(document.getElementById('networkSparkline'), {
+    ...chartConfig,
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        borderColor: '#28a745',
+        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+        fill: true
+      }]
+    }
+  });
+}
+
+async function updateServerMetrics() {
+  try {
+    const response = await fetch(`/api/servers/${serverId}/metrics?hours=1`, {
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    console.log('Metrics response:', data);
+    
+    if (data.success && data.metrics.length > 0) {
+      const metrics = data.metrics.slice(-20); // Last 20 points
+      const latest = metrics[metrics.length - 1];
+      
+      // Update values with more details
+      const cpuVal = parseFloat(latest.cpu_percent).toFixed(1);
+      document.getElementById('cpuValue').textContent = `${cpuVal}%`;
+      
+      const ramUsed = Math.round(latest.ram_used_mb / 1024 * 10) / 10;
+      const ramTotal = Math.round(latest.ram_total_mb / 1024 * 10) / 10;
+      const ramPercent = (latest.ram_used_mb / latest.ram_total_mb * 100).toFixed(0);
+      document.getElementById('ramValue').textContent = `${ramPercent}% (${ramUsed}G)`;
+      
+      const diskUsed = parseFloat(latest.disk_used_gb).toFixed(0);
+      const diskTotal = parseFloat(latest.disk_total_gb).toFixed(0);
+      const diskPercent = (latest.disk_used_gb / latest.disk_total_gb * 100).toFixed(0);
+      document.getElementById('diskValue').textContent = `${diskPercent}% (${diskUsed}G)`;
+      
+      const netRx = parseFloat(latest.network_rx_mbps).toFixed(1);
+      const netTx = parseFloat(latest.network_tx_mbps).toFixed(1);
+      document.getElementById('networkValue').textContent = `↓${netRx} ↑${netTx}`;
+      
+      // Update sparklines
+      const labels = metrics.map((_, i) => i);
+      
+      sparklineCharts.cpu.data.labels = labels;
+      sparklineCharts.cpu.data.datasets[0].data = metrics.map(m => parseFloat(m.cpu_percent));
+      sparklineCharts.cpu.update('none');
+      
+      sparklineCharts.ram.data.labels = labels;
+      sparklineCharts.ram.data.datasets[0].data = metrics.map(m => (m.ram_used_mb / m.ram_total_mb * 100));
+      sparklineCharts.ram.update('none');
+      
+      sparklineCharts.disk.data.labels = labels;
+      sparklineCharts.disk.data.datasets[0].data = metrics.map(m => (m.disk_used_gb / m.disk_total_gb * 100));
+      sparklineCharts.disk.update('none');
+      
+      sparklineCharts.network.data.labels = labels;
+      sparklineCharts.network.data.datasets[0].data = metrics.map(m => parseFloat(m.network_rx_mbps) + parseFloat(m.network_tx_mbps));
+      sparklineCharts.network.update('none');
+    }
+  } catch (error) {
+    console.error('Failed to fetch metrics:', error);
+    // Show error in UI
+    document.getElementById('cpuValue').textContent = 'Error';
+    document.getElementById('ramValue').textContent = 'Error';
+    document.getElementById('diskValue').textContent = 'Error';
+    document.getElementById('networkValue').textContent = 'Error';
+  }
+}
+
+// Initialize sparklines if active
+if (document.getElementById('cpuSparkline')) {
+  initSparklines();
+  updateServerMetrics();
+  setInterval(updateServerMetrics, 30000); // Update every 30 seconds
+}
+
+// Update client speeds
+async function updateClientSpeeds() {
+  const clientRows = document.querySelectorAll('[id^="client-speed-"]');
+  
+  console.log('Found client speed rows:', clientRows.length);
+  
+  for (const row of clientRows) {
+    const clientId = row.id.replace('client-speed-', '');
+    
+    console.log(`Fetching metrics for client ${clientId}`);
+    
+    try {
+      const response = await fetch(`/api/clients/${clientId}/metrics?hours=1`, {
+        credentials: 'same-origin'
+      });
+      
+      const data = await response.json();
+      
+      console.log(`Client ${clientId} metrics:`, data);
+      
+      if (data.success && data.metrics && data.metrics.length > 0) {
+        const latest = data.metrics[data.metrics.length - 1];
+        const speedUp = parseFloat(latest.speed_up_kbps).toFixed(1);
+        const speedDown = parseFloat(latest.speed_down_kbps).toFixed(1);
+        
+        // Format as compact badge
+        row.innerHTML = `<span class="text-xs text-gray-700">↑${speedUp} ↓${speedDown} KB/s</span>`;
+      } else {
+        console.log(`No metrics for client ${clientId}`);
+        row.innerHTML = '<span class="text-xs text-gray-400">-</span>';
+      }
+    } catch (error) {
+      console.error(`Failed to fetch metrics for client ${clientId}:`, error);
+      row.innerHTML = '<span class="text-xs text-gray-400">-</span>';
+    }
+  }
+}
+
+// Update client speeds on load and every 30 seconds
+if (document.querySelector('[id^="client-speed-"]')) {
+  updateClientSpeeds();
+  setInterval(updateClientSpeeds, 30000);
+}
+{% endif %}
 </script>
 {% endblock %}
