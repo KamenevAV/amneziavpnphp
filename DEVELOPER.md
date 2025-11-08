@@ -48,6 +48,11 @@ FLUSH PRIVILEGES;
 
 USE amnezia_panel;
 SOURCE migrations/001_init.sql;
+SOURCE migrations/002_translations_ru.sql;
+SOURCE migrations/003_translations_es.sql;
+SOURCE migrations/004_translations_de.sql;
+SOURCE migrations/005_translations_fr.sql;
+SOURCE migrations/006_translations_zh.sql;
 ```
 
 6. **Update Database Config**

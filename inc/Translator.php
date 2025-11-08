@@ -196,11 +196,11 @@ class Translator {
      * Translate text using AI with model fallback
      */
     private static function translateWithAI(string $text, string $targetLanguage): ?string {
-        // Try multiple free models for reliability
+        // Use reliable paid models with fallback
         $models = [
-            'google/gemini-2.0-flash-exp:free',
-            'meta-llama/llama-3.2-3b-instruct:free',
-            'qwen/qwen-2-7b-instruct:free'
+            'anthropic/claude-3.5-sonnet',
+            'openai/gpt-4o-mini',
+            'google/gemini-pro-1.5'
         ];
         
         foreach ($models as $model) {
@@ -350,9 +350,10 @@ class Translator {
         foreach ($missingKeys as $key => $value) {
             if (self::autoTranslate($targetLang, $key, $value)) {
                 $stats['translated']++;
-                usleep(500000); // 500ms delay between requests
+                sleep(3); // 3 second delay between requests to avoid rate limits
             } else {
                 $stats['failed']++;
+                sleep(2); // Also delay on failure
             }
         }
         
@@ -390,8 +391,9 @@ class Translator {
             $jsonTexts = json_encode($textsForJson, JSON_UNESCAPED_UNICODE);
             
             $models = [
-                'google/gemini-2.0-flash-exp:free',
-                'meta-llama/llama-3.2-3b-instruct:free'
+                'anthropic/claude-3.5-sonnet',
+                'openai/gpt-4o-mini',
+                'google/gemini-pro-1.5'
             ];
             
             foreach ($models as $model) {

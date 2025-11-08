@@ -30,8 +30,14 @@ class VpnClient {
     
     /**
      * Create new VPN client
+     * 
+     * @param int $serverId Server ID
+     * @param int $userId User ID
+     * @param string $name Client name
+     * @param int|null $expiresInDays Days until expiration (null = never expires)
+     * @return int Client ID
      */
-    public static function create(int $serverId, int $userId, string $name): int {
+    public static function create(int $serverId, int $userId, string $name, ?int $expiresInDays = null): int {
         $pdo = DB::conn();
         
         // Get server data
@@ -69,11 +75,14 @@ class VpnClient {
         // Generate QR code
         $qrCode = self::generateQRCode($config);
         
+        // Calculate expiration date
+        $expiresAt = $expiresInDays ? date('Y-m-d H:i:s', strtotime("+{$expiresInDays} days")) : null;
+        
         // Insert into database
         $stmt = $pdo->prepare('
             INSERT INTO vpn_clients 
-            (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, config, qr_code, status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, config, qr_code, status, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
         
         $stmt->execute([
@@ -86,7 +95,8 @@ class VpnClient {
             $serverData['preshared_key'],
             $config,
             $qrCode,
-            'active'
+            'active',
+            $expiresAt
         ]);
         
         return (int)$pdo->lastInsertId();
@@ -685,4 +695,135 @@ class VpnClient {
         
         return round($bytes / pow(1024, $i), 2) . ' ' . $units[$i];
     }
+    
+    /**
+     * Set client expiration date
+     * 
+     * @param int $clientId Client ID
+     * @param string|null $expiresAt Expiration date (Y-m-d H:i:s) or null for never expires
+     * @return bool Success
+     */
+    public static function setExpiration(int $clientId, ?string $expiresAt): bool {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('UPDATE vpn_clients SET expires_at = ? WHERE id = ?');
+        return $stmt->execute([$expiresAt, $clientId]);
+    }
+    
+    /**
+     * Extend client expiration by days
+     * 
+     * @param int $clientId Client ID
+     * @param int $days Days to extend
+     * @return bool Success
+     */
+    public static function extendExpiration(int $clientId, int $days): bool {
+        $pdo = DB::conn();
+        
+        // Get current expiration
+        $stmt = $pdo->prepare('SELECT expires_at FROM vpn_clients WHERE id = ?');
+        $stmt->execute([$clientId]);
+        $client = $stmt->fetch();
+        
+        if (!$client) {
+            return false;
+        }
+        
+        // Calculate new expiration from current or now
+        $baseDate = $client['expires_at'] ? strtotime($client['expires_at']) : time();
+        $newExpiration = date('Y-m-d H:i:s', strtotime("+{$days} days", $baseDate));
+        
+        return self::setExpiration($clientId, $newExpiration);
+    }
+    
+    /**
+     * Get clients expiring soon
+     * 
+     * @param int $days Check for clients expiring within N days
+     * @return array List of expiring clients
+     */
+    public static function getExpiringClients(int $days = 7): array {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT c.*, s.name as server_name, s.host, u.name as user_name, u.email
+            FROM vpn_clients c
+            JOIN vpn_servers s ON c.server_id = s.id
+            JOIN users u ON c.user_id = u.id
+            WHERE c.expires_at IS NOT NULL 
+            AND c.expires_at <= DATE_ADD(NOW(), INTERVAL ? DAY)
+            AND c.expires_at > NOW()
+            AND c.status = "active"
+            ORDER BY c.expires_at ASC
+        ');
+        $stmt->execute([$days]);
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Get expired clients
+     * 
+     * @return array List of expired clients
+     */
+    public static function getExpiredClients(): array {
+        $pdo = DB::conn();
+        $stmt = $pdo->query('
+            SELECT c.*, s.name as server_name, s.host
+            FROM vpn_clients c
+            JOIN vpn_servers s ON c.server_id = s.id
+            WHERE c.expires_at IS NOT NULL 
+            AND c.expires_at <= NOW()
+            AND c.status = "active"
+            ORDER BY c.expires_at DESC
+        ');
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Disable expired clients automatically
+     * 
+     * @return int Number of clients disabled
+     */
+    public static function disableExpiredClients(): int {
+        $expiredClients = self::getExpiredClients();
+        $count = 0;
+        
+        foreach ($expiredClients as $clientData) {
+            try {
+                $client = new self($clientData['id']);
+                $client->revoke();
+                $count++;
+            } catch (Exception $e) {
+                error_log("Failed to disable expired client {$clientData['id']}: " . $e->getMessage());
+            }
+        }
+        
+        return $count;
+    }
+    
+    /**
+     * Check if client is expired
+     * 
+     * @return bool True if expired
+     */
+    public function isExpired(): bool {
+        if (!$this->data) {
+            return false;
+        }
+        
+        return $this->data['expires_at'] !== null && strtotime($this->data['expires_at']) <= time();
+    }
+    
+    /**
+     * Get days until expiration
+     * 
+     * @return int|null Days until expiration (negative if expired, null if never expires)
+     */
+    public function getDaysUntilExpiration(): ?int {
+        if (!$this->data || $this->data['expires_at'] === null) {
+            return null;
+        }
+        
+        $diff = strtotime($this->data['expires_at']) - time();
+        return (int)floor($diff / 86400);
+    }
 }
+

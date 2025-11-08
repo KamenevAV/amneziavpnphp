@@ -1,0 +1,29 @@
+{
+    "server": {
+        "name": "NL Server1",
+        "host": "62.204.42.184",
+        "port": 22,
+        "vpn_port": 64966,
+        "vpn_subnet": "10.8.1.0\/24",
+        "container_name": "amnezia-awg",
+        "server_public_key": "AFgZ21KZdOmopdpg5EP6g7rroGFpPOlGNXVZ8sh7JFY=",
+        "preshared_key": "QdeZLyd5\/eZoC8Iz5MAGu6lrEX2dp04Rq6+s2UhefnA=",
+        "awg_params": "{\"H1\": 700691355, \"H2\": 416510699, \"H3\": 1626278027, \"H4\": 1657157387, \"Jc\": 3, \"S1\": 117, \"S2\": 177, \"Jmax\": 50, \"Jmin\": 10}"
+    },
+    "clients": [
+        {
+            "id": 1,
+            "name": "oleg",
+            "client_ip": "10.8.1.1",
+            "public_key": "U3N6bUhl+Wfqe7dB+Rn9vu1A16nz2cz\/9WgFiJoHMS0=",
+            "private_key": "gMjQq1E8vD76ZEuA+si\/Xd5FiA1mkSBjUsjc8d4+lFw=",
+            "preshared_key": "QdeZLyd5\/eZoC8Iz5MAGu6lrEX2dp04Rq6+s2UhefnA=",
+            "config": "[Interface]\nPrivateKey = gMjQq1E8vD76ZEuA+si\/Xd5FiA1mkSBjUsjc8d4+lFw=\nAddress = 10.8.1.1\/32\nDNS = 1.1.1.1, 1.0.0.1\nJc = 3\nJmin = 10\nJmax = 50\nS1 = 117\nS2 = 177\nH1 = 700691355\nH2 = 416510699\nH3 = 1626278027\nH4 = 1657157387\n\n[Peer]\nPublicKey = AFgZ21KZdOmopdpg5EP6g7rroGFpPOlGNXVZ8sh7JFY=\nPresharedKey = QdeZLyd5\/eZoC8Iz5MAGu6lrEX2dp04Rq6+s2UhefnA=\nEndpoint = 62.204.42.184:64966\nAllowedIPs = 0.0.0.0\/0, ::\/0\nPersistentKeepalive = 25\n",
+            "status": "active",
+            "expires_at": null,
+            "created_at": "2025-11-08 05:46:15"
+        }
+    ],
+    "backup_date": "2025-11-08 06:06:24",
+    "version": "1.0"
+}

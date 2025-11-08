@@ -81,6 +81,39 @@ function requireAdmin(): void {
     }
 }
 
+// Helper function to get authenticated user (JWT or session)
+function getAuthUser(): ?array {
+    // Try JWT first
+    $token = JWT::getTokenFromHeader();
+    if ($token !== null) {
+        $user = JWT::verify($token);
+        if ($user !== null) {
+            return $user;
+        }
+    }
+    
+    // Fall back to session
+    if (Auth::check()) {
+        return Auth::user();
+    }
+    
+    return null;
+}
+
+// Helper function to require authentication (JWT or session) for API
+function requireApiAuth(): ?array {
+    $user = getAuthUser();
+    
+    if ($user === null) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Authentication required']);
+        return null;
+    }
+    
+    return $user;
+}
+
 /**
  * PUBLIC ROUTES
  */
@@ -327,8 +360,9 @@ Router::get('/servers/{id}', function ($params) {
             'clients' => $clients,
         ]);
     } catch (Exception $e) {
+        error_log('Server view error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
         http_response_code(404);
-        echo 'Server not found';
+        echo 'Server not found: ' . htmlspecialchars($e->getMessage());
     }
 });
 
@@ -361,6 +395,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
     requireAuth();
     $serverId = (int)$params['id'];
     $clientName = trim($_POST['name'] ?? '');
+    $expiresInDays = !empty($_POST['expires_in_days']) ? (int)$_POST['expires_in_days'] : null;
     
     if (empty($clientName)) {
         redirect('/servers/' . $serverId . '?error=Client+name+is+required');
@@ -379,7 +414,7 @@ Router::post('/servers/{id}/clients/create', function ($params) {
             return;
         }
         
-        $clientId = VpnClient::create($serverId, $user['id'], $clientName);
+        $clientId = VpnClient::create($serverId, $user['id'], $clientName, $expiresInDays);
         redirect('/clients/' . $clientId);
     } catch (Exception $e) {
         redirect('/servers/' . $serverId . '?error=' . urlencode($e->getMessage()));
@@ -768,6 +803,157 @@ Router::delete('/api/servers/{id}/delete', function ($params) {
     }
 });
 
+// API: Create backup
+Router::post('/api/servers/{id}/backup', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = requireApiAuth();
+    if (!$user) return;
+    
+    $serverId = (int)$params['id'];
+    
+    try {
+        $server = new VpnServer($serverId);
+        $serverData = $server->getData();
+        
+        // Check ownership or admin
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        $backupId = $server->createBackup($user['id'], 'manual');
+        $backup = VpnServer::getBackup($backupId);
+        
+        echo json_encode([
+            'success' => true,
+            'backup' => $backup
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// API: List backups
+Router::get('/api/servers/{id}/backups', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = requireApiAuth();
+    if (!$user) return;
+    
+    $serverId = (int)$params['id'];
+    
+    try {
+        $server = new VpnServer($serverId);
+        $serverData = $server->getData();
+        
+        // Check ownership or admin
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        $backups = $server->listBackups();
+        
+        echo json_encode([
+            'success' => true,
+            'backups' => $backups,
+            'count' => count($backups)
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// API: Restore backup
+Router::post('/api/servers/{id}/restore', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = requireApiAuth();
+    if (!$user) return;
+    
+    $serverId = (int)$params['id'];
+    $raw = file_get_contents('php://input');
+    $data = json_decode($raw, true);
+    
+    $backupId = (int)($data['backup_id'] ?? 0);
+    
+    if ($backupId <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'backup_id is required']);
+        return;
+    }
+    
+    try {
+        $server = new VpnServer($serverId);
+        $serverData = $server->getData();
+        
+        // Check ownership or admin
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        $result = $server->restoreBackup($backupId);
+        
+        // Log the result for debugging
+        error_log('Restore backup result: ' . json_encode($result));
+        
+        // Always return the result, even if success is false
+        echo json_encode($result);
+    } catch (Exception $e) {
+        error_log('Restore backup exception: ' . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage(), 'success' => false]);
+    }
+});
+
+// API: Delete backup
+Router::delete('/api/backups/{id}', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = requireApiAuth();
+    if (!$user) return;
+    
+    $backupId = (int)$params['id'];
+    
+    try {
+        $backup = VpnServer::getBackup($backupId);
+        
+        if (!$backup) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Backup not found']);
+            return;
+        }
+        
+        // Get server to check ownership
+        $server = new VpnServer($backup['server_id']);
+        $serverData = $server->getData();
+        
+        // Check ownership or admin
+        if ($serverData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        VpnServer::deleteBackup($backupId);
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Backup deleted successfully'
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
 // API: List clients
 Router::get('/api/clients', function () {
     header('Content-Type: application/json');
@@ -988,6 +1174,7 @@ Router::post('/api/clients/create', function () {
     
     $serverId = (int)($data['server_id'] ?? 0);
     $name = trim($data['name'] ?? '');
+    $expiresInDays = isset($data['expires_in_days']) ? (int)$data['expires_in_days'] : null;
     
     if ($serverId <= 0 || empty($name)) {
         http_response_code(400);
@@ -996,7 +1183,7 @@ Router::post('/api/clients/create', function () {
     }
     
     try {
-        $clientId = VpnClient::create($serverId, $user['id'], $name);
+        $clientId = VpnClient::create($serverId, $user['id'], $name, $expiresInDays);
         
         $client = new VpnClient($clientId);
         $clientData = $client->getData();
@@ -1010,10 +1197,124 @@ Router::post('/api/clients/create', function () {
                 'server_id' => $clientData['server_id'],
                 'client_ip' => $clientData['client_ip'],
                 'status' => $clientData['status'],
+                'expires_at' => $clientData['expires_at'],
                 'created_at' => $clientData['created_at'],
                 'config' => $clientData['config'],
                 'qr_code' => $clientData['qr_code'],
             ]
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// Set client expiration
+Router::post('/api/clients/{id}/set-expiration', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = JWT::requireAuth();
+    if (!$user) return;
+    
+    $clientId = (int)$params['id'];
+    $raw = file_get_contents('php://input');
+    $data = json_decode($raw, true);
+    
+    $expiresAt = $data['expires_at'] ?? null; // Y-m-d H:i:s format or null
+    
+    try {
+        $client = new VpnClient($clientId);
+        $clientData = $client->getData();
+        
+        // Check ownership
+        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        VpnClient::setExpiration($clientId, $expiresAt);
+        
+        echo json_encode([
+            'success' => true,
+            'expires_at' => $expiresAt
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// Extend client expiration
+Router::post('/api/clients/{id}/extend', function ($params) {
+    header('Content-Type: application/json');
+    
+    $user = JWT::requireAuth();
+    if (!$user) return;
+    
+    $clientId = (int)$params['id'];
+    $raw = file_get_contents('php://input');
+    $data = json_decode($raw, true);
+    
+    $days = (int)($data['days'] ?? 30);
+    
+    if ($days <= 0) {
+        http_response_code(400);
+        echo json_encode(['error' => 'days must be positive']);
+        return;
+    }
+    
+    try {
+        $client = new VpnClient($clientId);
+        $clientData = $client->getData();
+        
+        // Check ownership
+        if ($clientData['user_id'] != $user['id'] && $user['role'] !== 'admin') {
+            http_response_code(403);
+            echo json_encode(['error' => 'Forbidden']);
+            return;
+        }
+        
+        VpnClient::extendExpiration($clientId, $days);
+        
+        // Get updated expiration
+        $client = new VpnClient($clientId);
+        $updated = $client->getData();
+        
+        echo json_encode([
+            'success' => true,
+            'expires_at' => $updated['expires_at'],
+            'extended_days' => $days
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+});
+
+// Get expiring clients
+Router::get('/api/clients/expiring', function () {
+    header('Content-Type: application/json');
+    
+    $user = JWT::requireAuth();
+    if (!$user) return;
+    
+    $days = (int)($_GET['days'] ?? 7);
+    
+    try {
+        $clients = VpnClient::getExpiringClients($days);
+        
+        // Filter by user if not admin
+        if ($user['role'] !== 'admin') {
+            $clients = array_filter($clients, function($c) use ($user) {
+                return $c['user_id'] == $user['id'];
+            });
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'clients' => array_values($clients),
+            'count' => count($clients)
         ]);
     } catch (Exception $e) {
         http_response_code(500);

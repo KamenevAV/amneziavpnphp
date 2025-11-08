@@ -32,7 +32,7 @@
         <nav class="-mb-px flex space-x-8">
             <a href="#" onclick="showTab('profile'); return false;" id="tab-profile" 
                class="tab-link border-purple-500 text-purple-600 py-4 px-1 border-b-2 font-medium text-sm">
-                <i class="fas fa-user mr-2"></i>Profile
+                <i class="fas fa-user mr-2"></i>{{ t('settings.profile') }}
             </a>
             <a href="#" onclick="showTab('api'); return false;" id="tab-api"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
@@ -40,12 +40,12 @@
             </a>
             <a href="#" onclick="showTab('translations'); return false;" id="tab-translations"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
-                <i class="fas fa-language mr-2"></i>Translations
+                <i class="fas fa-language mr-2"></i>{{ t('settings.translations') }}
             </a>
             {% if user.role == 'admin' %}
             <a href="#" onclick="showTab('users'); return false;" id="tab-users"
                class="tab-link border-transparent text-gray-500 hover:text-gray-700 py-4 px-1 border-b-2 font-medium text-sm">
-                <i class="fas fa-users mr-2"></i>Users
+                <i class="fas fa-users mr-2"></i>{{ t('settings.users') }}
             </a>
             {% endif %}
         </nav>
@@ -56,30 +56,30 @@
         <div class="bg-white shadow rounded-lg">
             <div class="px-6 py-5 border-b border-gray-200">
                 <h2 class="text-lg font-medium text-gray-900">
-                    <i class="fas fa-lock mr-2 text-purple-600"></i>Change Password
+                    <i class="fas fa-lock mr-2 text-purple-600"></i>{{ t('settings.change_password') }}
                 </h2>
             </div>
             <div class="px-6 py-5">
                 <form method="POST" action="/settings/change-password">
                     <div class="space-y-4 max-w-md">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('settings.current_password') }}</label>
                             <input type="password" name="current_password" required
                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('settings.new_password') }}</label>
                             <input type="password" name="new_password" required minlength="6"
                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                            <p class="mt-1 text-xs text-gray-500">Minimum 6 characters</p>
+                            <p class="mt-1 text-xs text-gray-500">{{ t('settings.min_6_chars') }}</p>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('settings.confirm_password') }}</label>
                             <input type="password" name="confirm_password" required minlength="6"
                                    class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                         <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                            <i class="fas fa-save mr-2"></i>Change Password
+                            <i class="fas fa-save mr-2"></i>{{ t('settings.change_password') }}
                         </button>
                     </div>
                 </form>
@@ -101,7 +101,7 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <i class="fas fa-check-circle text-green-600 mr-2"></i>
-                            <span class="text-sm font-medium text-green-900">API Key Configured</span>
+                            <span class="text-sm font-medium text-green-900">{{ t('settings.api_key_configured') }}</span>
                         </div>
                         <code class="text-xs text-green-700 bg-green-100 px-2 py-1 rounded">
                             {{ openrouter_key[:15] }}...{{ openrouter_key[-4:] }}
@@ -111,7 +111,7 @@
                 {% else %}
                 <div class="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-md">
                     <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
-                    <span class="text-sm text-yellow-800">No API key configured. Auto-translation will not work.</span>
+                    <span class="text-sm text-yellow-800">{{ t('settings.no_api_key') }}</span>
                 </div>
                 {% endif %}
                 
@@ -126,6 +126,12 @@
                             <i class="fas fa-info-circle"></i> {{ t('settings.get_key_at') }} 
                             <a href="https://openrouter.ai/keys" target="_blank" class="text-purple-600">openrouter.ai/keys</a>
                         </p>
+                        <div class="mt-3">
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" name="skip_test" value="1" class="rounded border-gray-300 text-purple-600 focus:ring-purple-500">
+                                <span class="ml-2 text-sm text-gray-600">{{ t('settings.skip_validation') }}</span>
+                            </label>
+                        </div>
                         <input type="hidden" name="service" value="openrouter">
                         <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
                             <i class="fas fa-save mr-2"></i>{{ openrouter_key ? t('form.update') : t('form.save') }}
@@ -194,34 +200,34 @@
         <div class="bg-white shadow rounded-lg mb-6">
             <div class="px-6 py-5 border-b border-gray-200">
                 <h2 class="text-lg font-medium text-gray-900">
-                    <i class="fas fa-user-plus mr-2 text-purple-600"></i>Add User
+                    <i class="fas fa-user-plus mr-2 text-purple-600"></i>{{ t('users.add_user') }}
                 </h2>
             </div>
             <div class="px-6 py-5">
                 <form method="POST" action="/settings/add-user">
                     <div class="grid grid-cols-2 gap-4 max-w-2xl">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('auth.name') }}</label>
                             <input type="text" name="name" required class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('auth.email') }}</label>
                             <input type="email" name="email" required class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('auth.password') }}</label>
                             <input type="password" name="password" required minlength="6" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('users.role') }}</label>
                             <select name="role" class="block w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-purple-500 focus:border-purple-500">
-                                <option value="user">User</option>
-                                <option value="admin">Administrator</option>
+                                <option value="user">{{ t('users.role_user') }}</option>
+                                <option value="admin">{{ t('users.role_admin') }}</option>
                             </select>
                         </div>
                     </div>
                     <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
-                        <i class="fas fa-user-plus mr-2"></i>Add User
+                        <i class="fas fa-user-plus mr-2"></i>{{ t('users.add_user') }}
                     </button>
                 </form>
             </div>
@@ -230,17 +236,17 @@
         <div class="bg-white shadow rounded-lg overflow-hidden">
             <div class="px-6 py-5 border-b border-gray-200">
                 <h2 class="text-lg font-medium text-gray-900">
-                    <i class="fas fa-users mr-2 text-purple-600"></i>All Users
+                    <i class="fas fa-users mr-2 text-purple-600"></i>{{ t('users.all_users') }}
                 </h2>
             </div>
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.name') }}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('auth.email') }}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.role') }}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('users.created') }}</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('settings.actions') }}</th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
@@ -255,17 +261,17 @@
                         <td class="px-6 py-4 text-sm text-gray-500">{{ u.email }}</td>
                         <td class="px-6 py-4">
                             {% if u.role == 'admin' %}
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">Admin</span>
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800">{{ t('users.role_admin') }}</span>
                             {% else %}
-                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">User</span>
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">{{ t('users.role_user') }}</span>
                             {% endif %}
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-500">{{ u.created_at|date('Y-m-d') }}</td>
                         <td class="px-6 py-4 text-sm">
                             {% if u.id != user.id %}
-                            <form method="POST" action="/settings/delete-user/{{ u.id }}" class="inline" onsubmit="return confirm('Delete {{ u.name }}?')">
+                            <form method="POST" action="/settings/delete-user/{{ u.id }}" class="inline" onsubmit="return confirm('{{ t('users.delete_confirm', [u.name]) }}')">
                                 <button type="submit" class="text-red-600 hover:text-red-900">
-                                    <i class="fas fa-trash"></i> Delete
+                                    <i class="fas fa-trash"></i> {{ t('clients.delete') }}
                                 </button>
                             </form>
                             {% endif %}

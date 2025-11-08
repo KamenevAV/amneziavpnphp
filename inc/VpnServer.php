@@ -446,4 +446,266 @@ BASH;
     public function getData(): ?array {
         return $this->data;
     }
+    
+    /**
+     * Create backup of server configuration and all clients
+     * 
+     * @param int $userId User who creates the backup
+     * @param string $backupType Type: 'manual' or 'automatic'
+     * @return int Backup ID
+     */
+    public function createBackup(int $userId, string $backupType = 'manual'): int {
+        if (!$this->data) {
+            throw new Exception('Server not loaded');
+        }
+        
+        $pdo = DB::conn();
+        $backupName = 'backup_' . $this->serverId . '_' . date('Y-m-d_His') . '.json';
+        $backupDir = '/var/www/html/backups';
+        $backupPath = $backupDir . '/' . $backupName;
+        
+        // Create backups directory if not exists
+        if (!is_dir($backupDir)) {
+            mkdir($backupDir, 0755, true);
+        }
+        
+        try {
+            // Get all clients for this server
+            $stmt = $pdo->prepare('
+                SELECT id, name, client_ip, public_key, private_key, preshared_key, 
+                       config, status, expires_at, created_at
+                FROM vpn_clients 
+                WHERE server_id = ?
+            ');
+            $stmt->execute([$this->serverId]);
+            $clients = $stmt->fetchAll();
+            
+            // Prepare backup data
+            $backupData = [
+                'server' => [
+                    'name' => $this->data['name'],
+                    'host' => $this->data['host'],
+                    'port' => $this->data['port'],
+                    'vpn_port' => $this->data['vpn_port'],
+                    'vpn_subnet' => $this->data['vpn_subnet'],
+                    'container_name' => $this->data['container_name'],
+                    'server_public_key' => $this->data['server_public_key'],
+                    'preshared_key' => $this->data['preshared_key'],
+                    'awg_params' => $this->data['awg_params'],
+                ],
+                'clients' => $clients,
+                'backup_date' => date('Y-m-d H:i:s'),
+                'version' => '1.0'
+            ];
+            
+            // Write backup to file
+            $json = json_encode($backupData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            file_put_contents($backupPath, $json);
+            
+            $backupSize = filesize($backupPath);
+            
+            // Insert backup record
+            $stmt = $pdo->prepare('
+                INSERT INTO server_backups 
+                (server_id, backup_name, backup_path, backup_size, clients_count, backup_type, status, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ');
+            
+            $stmt->execute([
+                $this->serverId,
+                $backupName,
+                $backupPath,
+                $backupSize,
+                count($clients),
+                $backupType,
+                'completed',
+                $userId
+            ]);
+            
+            return (int)$pdo->lastInsertId();
+            
+        } catch (Exception $e) {
+            // Mark backup as failed
+            if (isset($stmt)) {
+                $stmt = $pdo->prepare('
+                    INSERT INTO server_backups 
+                    (server_id, backup_name, backup_path, backup_type, status, error_message, created_by) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ');
+                
+                $stmt->execute([
+                    $this->serverId,
+                    $backupName,
+                    $backupPath,
+                    $backupType,
+                    'failed',
+                    $e->getMessage(),
+                    $userId
+                ]);
+            }
+            
+            throw $e;
+        }
+    }
+    
+    /**
+     * List all backups for this server
+     * 
+     * @return array List of backups
+     */
+    public function listBackups(): array {
+        if (!$this->data) {
+            throw new Exception('Server not loaded');
+        }
+        
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('
+            SELECT b.*, u.name as created_by_name, u.email as created_by_email
+            FROM server_backups b
+            LEFT JOIN users u ON b.created_by = u.id
+            WHERE b.server_id = ?
+            ORDER BY b.created_at DESC
+        ');
+        $stmt->execute([$this->serverId]);
+        return $stmt->fetchAll();
+    }
+    
+    /**
+     * Restore server from backup
+     * Note: This only restores client configurations to database
+     * Server must already be deployed
+     * 
+     * @param int $backupId Backup ID
+     * @return array Restoration results
+     */
+    public function restoreBackup(int $backupId): array {
+        if (!$this->data) {
+            throw new Exception('Server not loaded');
+        }
+        
+        if ($this->data['status'] !== 'active') {
+            throw new Exception('Server must be active to restore backup');
+        }
+        
+        $pdo = DB::conn();
+        
+        // Get backup record
+        $stmt = $pdo->prepare('SELECT * FROM server_backups WHERE id = ? AND server_id = ?');
+        $stmt->execute([$backupId, $this->serverId]);
+        $backup = $stmt->fetch();
+        
+        if (!$backup) {
+            throw new Exception('Backup not found');
+        }
+        
+        if (!file_exists($backup['backup_path'])) {
+            throw new Exception('Backup file not found');
+        }
+        
+        // Read backup data
+        $backupData = json_decode(file_get_contents($backup['backup_path']), true);
+        
+        if (!$backupData || !isset($backupData['clients'])) {
+            throw new Exception('Invalid backup format');
+        }
+        
+        $restored = 0;
+        $failed = 0;
+        $errors = [];
+        
+        foreach ($backupData['clients'] as $clientData) {
+            try {
+                // Check if client already exists by IP
+                $stmt = $pdo->prepare('SELECT id FROM vpn_clients WHERE server_id = ? AND client_ip = ?');
+                $stmt->execute([$this->serverId, $clientData['client_ip']]);
+                $existing = $stmt->fetch();
+                
+                if ($existing) {
+                    $errors[] = "Client {$clientData['name']} already exists";
+                    $failed++;
+                    continue;
+                }
+                
+                // Insert client
+                $stmt = $pdo->prepare('
+                    INSERT INTO vpn_clients 
+                    (server_id, user_id, name, client_ip, public_key, private_key, preshared_key, 
+                     config, status, expires_at) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ');
+                
+                $stmt->execute([
+                    $this->serverId,
+                    $this->data['user_id'],
+                    $clientData['name'],
+                    $clientData['client_ip'],
+                    $clientData['public_key'],
+                    $clientData['private_key'],
+                    $clientData['preshared_key'],
+                    $clientData['config'],
+                    'disabled', // Restore as disabled for safety
+                    $clientData['expires_at']
+                ]);
+                
+                // Add client to server container
+                VpnClient::addClientToServer($this->data, $clientData['public_key'], $clientData['client_ip']);
+                
+                $restored++;
+                
+            } catch (Exception $e) {
+                $failed++;
+                $errors[] = "Failed to restore {$clientData['name']}: " . $e->getMessage();
+            }
+        }
+        
+        return [
+            'success' => true, // Always success if process completed
+            'restored' => $restored,
+            'failed' => $failed,
+            'total' => count($backupData['clients']),
+            'errors' => $errors,
+            'message' => $restored > 0 ? "Restored $restored clients" : "No clients restored"
+        ];
+    }
+    
+    /**
+     * Delete backup
+     * 
+     * @param int $backupId Backup ID
+     * @return bool Success
+     */
+    public static function deleteBackup(int $backupId): bool {
+        $pdo = DB::conn();
+        
+        // Get backup path
+        $stmt = $pdo->prepare('SELECT backup_path FROM server_backups WHERE id = ?');
+        $stmt->execute([$backupId]);
+        $backup = $stmt->fetch();
+        
+        if (!$backup) {
+            return false;
+        }
+        
+        // Delete file
+        if (file_exists($backup['backup_path'])) {
+            unlink($backup['backup_path']);
+        }
+        
+        // Delete record
+        $stmt = $pdo->prepare('DELETE FROM server_backups WHERE id = ?');
+        return $stmt->execute([$backupId]);
+    }
+    
+    /**
+     * Get backup by ID
+     * 
+     * @param int $backupId Backup ID
+     * @return array|null Backup data
+     */
+    public static function getBackup(int $backupId): ?array {
+        $pdo = DB::conn();
+        $stmt = $pdo->prepare('SELECT * FROM server_backups WHERE id = ?');
+        $stmt->execute([$backupId]);
+        return $stmt->fetch() ?: null;
+    }
 }

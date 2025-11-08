@@ -5,12 +5,14 @@ Web-based management panel for Amnezia AWG (WireGuard) VPN servers.
 ## Features
 
 - VPN server deployment via SSH
-- Client configuration management
+- Client configuration management with **expiration dates**
+- **Server backup and restore** functionality
 - Traffic statistics monitoring
 - QR code generation for mobile apps
 - Multi-language interface (English, Russian, Spanish, German, French, Chinese)
 - REST API with JWT authentication
 - User authentication and access control
+- **Automatic client expiration check** via cron
 
 ## Requirements
 
@@ -61,8 +63,54 @@ JWT_SECRET=your-secret-key-change-this
 
 1. Open server details
 2. Enter client name
-3. Click Create Client
-4. Download config or scan QR code
+3. **Select expiration period** (optional, default: never expires)
+4. Click Create Client
+5. Download config or scan QR code
+
+### Manage Client Expiration
+
+Set expiration via UI or API:
+```bash
+# Set specific date
+curl -X POST http://localhost:8082/api/clients/123/set-expiration \
+  -H "Authorization: Bearer <token>" \
+  -d '{"expires_at": "2025-12-31 23:59:59"}'
+
+# Extend by 30 days
+curl -X POST http://localhost:8082/api/clients/123/extend \
+  -H "Authorization: Bearer <token>" \
+  -d '{"days": 30}'
+
+# Get expiring clients (within 7 days)
+curl http://localhost:8082/api/clients/expiring?days=7 \
+  -H "Authorization: Bearer <token>"
+```
+
+### Server Backups
+
+Create and restore backups via UI or API:
+```bash
+# Create backup
+curl -X POST http://localhost:8082/api/servers/1/backup \
+  -H "Authorization: Bearer <token>"
+
+# List backups
+curl http://localhost:8082/api/servers/1/backups \
+  -H "Authorization: Bearer <token>"
+
+# Restore from backup
+curl -X POST http://localhost:8082/api/servers/1/restore \
+  -H "Authorization: Bearer <token>" \
+  -d '{"backup_id": 123}'
+```
+
+### Automatic Client Expiration Check
+
+Run via cron to auto-disable expired clients:
+```bash
+# Add to crontab (runs every hour)
+0 * * * * docker compose exec web php /var/www/html/bin/check_expired_clients.php
+```
 
 ### API Authentication
 
@@ -103,10 +151,25 @@ GET    /api/clients                 - List all clients
 GET    /api/clients/{id}/details    - Get client details with stats, config and QR code
 GET    /api/clients/{id}/qr         - Get client QR code
 POST   /api/clients/create          - Create new client (returns config and QR code)
-       Parameters: server_id, name
+       Parameters: server_id, name, expires_in_days (optional)
 POST   /api/clients/{id}/revoke     - Revoke client access
 POST   /api/clients/{id}/restore    - Restore client access
 DELETE /api/clients/{id}/delete     - Delete client by ID
+POST   /api/clients/{id}/set-expiration  - Set client expiration date
+       Parameters: expires_at (Y-m-d H:i:s or null)
+POST   /api/clients/{id}/extend     - Extend client expiration
+       Parameters: days (int)
+GET    /api/clients/expiring        - Get clients expiring soon
+       Parameters: days (default: 7)
+```
+
+### Backups
+```
+POST   /api/servers/{id}/backup     - Create server backup
+GET    /api/servers/{id}/backups    - List server backups
+POST   /api/servers/{id}/restore    - Restore from backup
+       Parameters: backup_id
+DELETE /api/backups/{id}             - Delete backup
 ```
 
 ## Translation
@@ -133,7 +196,7 @@ inc/                  - Core classes
   JWT.php            - Token auth
   QrUtil.php         - QR code generation
 templates/           - Twig templates
-migrations/          - SQL migrations
+migrations/          - SQL migrations (executed in alphabetical order)
 ```
 
 ## Tech Stack

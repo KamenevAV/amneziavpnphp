@@ -176,6 +176,7 @@ class SettingsController {
         
         $service = $_POST['service'] ?? '';
         $apiKey = trim($_POST['api_key'] ?? '');
+        $skipTest = isset($_POST['skip_test']); // Allow saving without testing
         
         if (empty($service) || empty($apiKey)) {
             View::render('settings.twig', [
@@ -185,22 +186,20 @@ class SettingsController {
             return;
         }
         
-        // Validate OpenRouter key format
-        if ($service === 'openrouter' && !preg_match('/^sk-or-v1-[a-zA-Z0-9]{64,}$/', $apiKey)) {
-            View::render('settings.twig', [
-                'error' => $this->translator->translate('settings.error_invalid_key'),
-                'translation_stats' => $this->getTranslationStats()
-            ]);
-            return;
-        }
-        
-        // Test the API key
-        if ($service === 'openrouter') {
+        // Test the API key (unless skip_test is set)
+        if ($service === 'openrouter' && !$skipTest) {
             $testResult = $this->testOpenRouterKey($apiKey);
             if (!$testResult['success']) {
+                // If rate limited, suggest saving without test
+                $errorMsg = $this->translator->translate('settings.error_key_test') . ': ' . $testResult['error'];
+                if (strpos($testResult['error'], '429') !== false || strpos($testResult['error'], 'Rate limit') !== false) {
+                    $errorMsg .= ' - You can save without testing by checking "Skip validation"';
+                }
+                
                 View::render('settings.twig', [
-                    'error' => $this->translator->translate('settings.error_key_test') . ': ' . $testResult['error'],
-                    'translation_stats' => $this->getTranslationStats()
+                    'error' => $errorMsg,
+                    'translation_stats' => $this->getTranslationStats(),
+                    'openrouter_key' => ''
                 ]);
                 return;
             }
@@ -210,35 +209,32 @@ class SettingsController {
         $saved = $this->translator->saveApiKey($service, $apiKey);
         
         if ($saved) {
-            View::render('settings.twig', [
-                'success' => $this->translator->translate('settings.key_saved'),
-                'translation_stats' => $this->getTranslationStats(),
-                'openrouter_key' => '' // Don't show the saved key
-            ]);
+            $_SESSION['settings_success'] = $this->translator->translate('settings.key_saved');
+            header('Location: /settings#api');
+            exit;
         } else {
-            View::render('settings.twig', [
-                'error' => $this->translator->translate('message.error'),
-                'translation_stats' => $this->getTranslationStats()
-            ]);
+            $_SESSION['settings_error'] = $this->translator->translate('message.error');
+            header('Location: /settings#api');
+            exit;
         }
     }
     
     private function testOpenRouterKey($apiKey) {
-        // Test with a simple translation request
+        // Test with a simple request to check API key validity
         $url = 'https://openrouter.ai/api/v1/chat/completions';
         $data = [
-            'model' => 'google/gemini-2.0-flash-exp:free',
+            'model' => 'openai/gpt-4o-mini',
             'messages' => [
-                ['role' => 'user', 'content' => 'Translate "test" to Spanish. Reply only with the translation.']
+                ['role' => 'user', 'content' => 'Reply with: OK']
             ],
-            'temperature' => 0.3,
-            'max_tokens' => 10
+            'max_tokens' => 5
         ];
         
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $apiKey,
@@ -248,19 +244,55 @@ class SettingsController {
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
         
-        if ($httpCode === 200) {
-            $result = json_decode($response, true);
-            if (isset($result['choices'][0]['message']['content'])) {
-                return ['success' => true];
+        // Handle cURL errors
+        if ($curlError) {
+            return [
+                'success' => false,
+                'error' => 'Network error: ' . $curlError
+            ];
+        }
+        
+        // Parse response
+        $result = json_decode($response, true);
+        
+        // Success - got a valid response
+        if ($httpCode === 200 && isset($result['choices'][0]['message'])) {
+            return ['success' => true];
+        }
+        
+        // Extract error message from various formats
+        $errorMsg = 'Unknown error';
+        
+        if (isset($result['error'])) {
+            if (is_string($result['error'])) {
+                $errorMsg = $result['error'];
+            } elseif (isset($result['error']['message'])) {
+                $errorMsg = $result['error']['message'];
+            } elseif (isset($result['error']['code'])) {
+                $errorMsg = 'Error code: ' . $result['error']['code'];
             }
         }
         
-        $error = json_decode($response, true);
+        // Add HTTP code if not 200
+        if ($httpCode !== 200) {
+            $errorMsg .= ' (HTTP ' . $httpCode . ')';
+        }
+        
+        // Common error messages user-friendly translations
+        if (strpos($errorMsg, 'No auth credentials') !== false || $httpCode === 401) {
+            $errorMsg = 'Invalid API key or authentication failed';
+        } elseif (strpos($errorMsg, 'insufficient_quota') !== false || strpos($errorMsg, 'quota') !== false) {
+            $errorMsg = 'API quota exceeded or no credits available';
+        } elseif (strpos($errorMsg, 'rate_limit') !== false) {
+            $errorMsg = 'Rate limit exceeded, try again later';
+        }
+        
         return [
             'success' => false,
-            'error' => $error['error']['message'] ?? 'Unknown error (HTTP ' . $httpCode . ')'
+            'error' => $errorMsg
         ];
     }
     

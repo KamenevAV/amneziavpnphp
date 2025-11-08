@@ -13,33 +13,61 @@
       </dl>
     </div>
     <div class="bg-white rounded shadow p-6">
-      <h3 class="font-bold mb-4">Create Client</h3>
-      <form method="POST" action="/servers/{{ server.id }}/clients/create" class="flex gap-2" id="createClientForm">
-        <input name="name" placeholder="Client name" required class="flex-1 px-3 py-2 border rounded" id="clientName">
-        <button type="submit" class="gradient-bg text-white px-4 py-2 rounded" id="createClientBtn">
-          <span id="createClientText">Create</span>
+      <h3 class="font-bold mb-4">{{ t('clients.create') }}</h3>
+      <form method="POST" action="/servers/{{ server.id }}/clients/create" class="space-y-3" id="createClientForm">
+        <input name="name" placeholder="{{ t('clients.name') }}" required class="w-full px-3 py-2 border rounded" id="clientName">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">{{ t('clients.expiration') }}</label>
+          <select name="expires_in_days" class="w-full px-3 py-2 border rounded">
+            <option value="" selected>{{ t('clients.never_expires') }}</option>
+            <option value="7">7 {{ t('common.days') }}</option>
+            <option value="30">30 {{ t('common.days') }}</option>
+            <option value="60">60 {{ t('common.days') }}</option>
+            <option value="90">90 {{ t('common.days') }}</option>
+            <option value="180">180 {{ t('common.days') }}</option>
+            <option value="365">365 {{ t('common.days') }}</option>
+          </select>
+        </div>
+        <button type="submit" class="gradient-bg text-white px-4 py-2 rounded w-full" id="createClientBtn">
+          <span id="createClientText">{{ t('form.create') }}</span>
           <i class="fas fa-spinner fa-spin" id="createClientSpinner" style="display:none;"></i>
         </button>
       </form>
     </div>
   </div>
+  
+  <!-- Backup Section -->
+  <div class="bg-white rounded shadow mb-8">
+    <div class="px-6 py-4 border-b flex justify-between items-center">
+      <h3 class="font-bold">{{ t('backups.title') }}</h3>
+      <button onclick="createBackup({{ server.id }})" class="gradient-bg text-white px-4 py-2 rounded text-sm">
+        <i class="fas fa-save"></i> {{ t('backups.create') }}
+      </button>
+    </div>
+    <div id="backupsList" class="p-4">
+      <div class="text-center text-gray-500 py-4">
+        <i class="fas fa-spinner fa-spin"></i> {{ t('form.loading') }}
+      </div>
+    </div>
+  </div>
   <div class="bg-white rounded shadow">
     <div class="px-6 py-4 border-b flex justify-between items-center">
-      <h3 class="font-bold">Clients ({{ clients|length }})</h3>
+      <h3 class="font-bold">{{ t('clients.title') }} ({{ clients|length }})</h3>
       <button onclick="syncAllStats({{ server.id }})" class="text-purple-600 hover:text-purple-800 text-sm">
-        <i class="fas fa-sync-alt"></i> Sync Stats
+        <i class="fas fa-sync-alt"></i> {{ t('clients.sync_stats') }}
       </button>
     </div>
     {% if clients|length > 0 %}
     <table class="w-full">
       <thead class="bg-gray-50">
         <tr>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Traffic</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Seen</th>
-          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.name') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.ip') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.status') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.expiration') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.traffic') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.last_handshake') }}</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('clients.actions') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -49,9 +77,30 @@
           <td class="px-6 py-4">{{ client.client_ip }}</td>
           <td class="px-6 py-4">
             {% if client.status == 'active' %}
-              <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">Active</span>
+              <span class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">{{ t('status.active') }}</span>
             {% else %}
-              <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">Disabled</span>
+              <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">{{ t('status.disabled') }}</span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm">
+            {% if client.expires_at %}
+              {% set expires_ts = client.expires_at|date('U') %}
+              {% set now_ts = "now"|date('U') %}
+              {% set diff_days = ((expires_ts - now_ts) / 86400)|round %}
+              
+              {% if diff_days < 0 %}
+                <span class="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                  <i class="fas fa-exclamation-circle"></i> {{ t('clients.expired') }}
+                </span>
+              {% elseif diff_days <= 7 %}
+                <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
+                  <i class="fas fa-clock"></i> {{ diff_days }} {{ t('common.days') }}
+                </span>
+              {% else %}
+                <span class="text-gray-600">{{ client.expires_at|date('Y-m-d') }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-gray-400">{{ t('clients.never_expires') }}</span>
             {% endif %}
           </td>
           <td class="px-6 py-4 text-sm">
@@ -66,22 +115,22 @@
             {% if client.last_handshake %}
               <span class="text-gray-600">{{ client.last_handshake }}</span>
             {% else %}
-              <span class="text-gray-400">Never</span>
+              <span class="text-gray-400">{{ t('clients.never') }}</span>
             {% endif %}
           </td>
           <td class="px-6 py-4">
-            <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">View</a>
+            <a href="/clients/{{ client.id }}" class="text-purple-600 hover:text-purple-800 mr-2">{{ t('servers.view') }}</a>
             {% if client.status == 'active' %}
               <form method="POST" action="/clients/{{ client.id }}/revoke" style="display:inline;">
-                <button type="submit" class="text-orange-600 hover:text-orange-800 mr-2" onclick="return confirm('Revoke access for this client?')">Revoke</button>
+                <button type="submit" class="text-orange-600 hover:text-orange-800 mr-2" onclick="return confirm('{{ t('clients.revoke_confirm') }}')">{{ t('clients.revoke') }}</button>
               </form>
             {% else %}
               <form method="POST" action="/clients/{{ client.id }}/restore" style="display:inline;">
-                <button type="submit" class="text-green-600 hover:text-green-800 mr-2">Restore</button>
+                <button type="submit" class="text-green-600 hover:text-green-800 mr-2">{{ t('clients.restore') }}</button>
               </form>
             {% endif %}
             <form method="POST" action="/clients/{{ client.id }}/delete" style="display:inline;">
-              <button type="submit" class="text-red-600 hover:text-red-800" onclick="return confirm('Delete this client permanently?')">Delete</button>
+              <button type="submit" class="text-red-600 hover:text-red-800" onclick="return confirm('{{ t('clients.delete_confirm') }}')">{{ t('clients.delete') }}</button>
             </form>
           </td>
         </tr>
@@ -89,7 +138,7 @@
       </tbody>
     </table>
     {% else %}
-    <div class="p-12 text-center text-gray-500">No clients yet</div>
+    <div class="p-12 text-center text-gray-500">{{ t('clients.no_clients') }}</div>
     {% endif %}
   </div>
 </div>
@@ -125,6 +174,163 @@ async function syncAllStats(serverId) {
       location.reload();
     } else {
       alert('Failed to sync stats: ' + (data.error || 'Unknown error'));
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+  }
+}
+
+// Load backups on page load
+document.addEventListener('DOMContentLoaded', function() {
+  loadBackups({{ server.id }});
+});
+
+async function loadBackups(serverId) {
+  try {
+    const response = await fetch(`/api/servers/${serverId}/backups`, {
+      credentials: 'same-origin'
+    });
+    
+    if (response.status === 401) {
+      document.getElementById('backupsList').innerHTML = '<div class="text-center text-red-500 py-4">{{ t("message.error") }}: {{ t("backups.login_required") }}</div>';
+      return;
+    }
+    
+    const data = await response.json();
+    
+    if (data.success && data.backups.length > 0) {
+      let html = '<div class="space-y-2">';
+      data.backups.forEach(backup => {
+        const size = (backup.backup_size / 1024 / 1024).toFixed(2);
+        const statusClass = backup.status === 'completed' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+        
+        html += `
+          <div class="flex items-center justify-between p-3 border rounded">
+            <div class="flex-1">
+              <div class="font-medium">${backup.backup_name}</div>
+              <div class="text-sm text-gray-600">
+                ${backup.clients_count} {{ t('clients.title') }} • ${size} MB • ${backup.created_at}
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <span class="px-2 py-1 ${statusClass} rounded text-xs">${backup.status}</span>
+              ${backup.status === 'completed' ? `
+                <button onclick="restoreBackup(${serverId}, ${backup.id})" class="text-blue-600 hover:text-blue-800 px-3 py-1 border rounded text-sm">
+                  <i class="fas fa-undo"></i> {{ t('backups.restore') }}
+                </button>
+              ` : ''}
+              <button onclick="deleteBackup(${backup.id})" class="text-red-600 hover:text-red-800 px-3 py-1 border rounded text-sm">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      document.getElementById('backupsList').innerHTML = html;
+    } else {
+      document.getElementById('backupsList').innerHTML = '<div class="text-center text-gray-500 py-4">{{ t("backups.no_backups") }}</div>';
+    }
+  } catch (error) {
+    document.getElementById('backupsList').innerHTML = `<div class="text-center text-red-500 py-4">Error: ${error.message}</div>`;
+  }
+}
+
+async function createBackup(serverId) {
+  if (!confirm('{{ t("backups.create_confirm") }}')) return;
+  
+  // Show loading state
+  document.getElementById('backupsList').innerHTML = '<div class="text-center text-gray-500 py-4"><i class="fas fa-spinner fa-spin"></i> {{ t("form.processing") }}</div>';
+  
+  try {
+    const response = await fetch(`/api/servers/${serverId}/backup`, {
+      method: 'POST',
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert('{{ t("backups.created_success") }}');
+      loadBackups(serverId);
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+      loadBackups(serverId);
+    }
+  } catch (error) {
+    alert('Error: ' + error.message);
+    loadBackups(serverId);
+  }
+}
+
+async function restoreBackup(serverId, backupId) {
+  if (!confirm('{{ t("backups.restore_confirm") }}')) return;
+  
+  try {
+    const response = await fetch(`/api/servers/${serverId}/restore`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ backup_id: backupId })
+    });
+    
+    const data = await response.json();
+    console.log('Restore response:', data);
+    
+    if (data.success !== false) {
+      let message = `{{ t("backups.restored_success") }}: ${data.restored} {{ t("clients.title") }}`;
+      
+      if (data.failed > 0) {
+        message += `\n\nПропущено: ${data.failed}`;
+        if (data.errors && data.errors.length > 0) {
+          message += '\n\nПричины:\n' + data.errors.slice(0, 5).join('\n');
+          if (data.errors.length > 5) {
+            message += `\n... и ещё ${data.errors.length - 5}`;
+          }
+        }
+      }
+      
+      alert(message);
+      if (data.restored > 0) {
+        location.reload();
+      } else {
+        loadBackups(serverId);
+      }
+    } else {
+      let errorMsg = 'Error: ';
+      if (data.error) {
+        errorMsg += data.error;
+      } else if (data.errors && data.errors.length > 0) {
+        errorMsg += data.errors.join(', ');
+      } else {
+        errorMsg += 'Unknown error';
+      }
+      alert(errorMsg);
+    }
+  } catch (error) {
+    console.error('Restore error:', error);
+    alert('Error: ' + error.message);
+  }
+}
+
+async function deleteBackup(backupId) {
+  if (!confirm('{{ t("backups.delete_confirm") }}')) return;
+  
+  try {
+    const response = await fetch(`/api/backups/${backupId}`, {
+      method: 'DELETE',
+      credentials: 'same-origin'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      alert('{{ t("backups.deleted_success") }}');
+      loadBackups({{ server.id }});
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
     }
   } catch (error) {
     alert('Error: ' + error.message);
