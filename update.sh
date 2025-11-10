@@ -610,11 +610,46 @@ fi
 log ""
 log "${BLUE}[9/10] Restarting containers...${NC}"
 
-log_info "Restarting web container..."
-$DOCKER_COMPOSE restart web 2>&1 | tee -a "$LOG_FILE"
+# Check if Dockerfile was modified
+DOCKERFILE_CHANGED=0
+if [ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]; then
+    if git diff --name-only "$CURRENT_COMMIT" "$NEW_COMMIT" 2>/dev/null | grep -q "Dockerfile\|bin/monitor_metrics.sh\|bin/collect_metrics.php"; then
+        DOCKERFILE_CHANGED=1
+        log_info "Dockerfile or critical scripts changed, rebuilding..."
+    fi
+fi
 
-# Wait for container to be ready
-sleep 5
+if [ $DOCKERFILE_CHANGED -eq 1 ]; then
+    log_info "Rebuilding web container..."
+    $DOCKER_COMPOSE build --no-cache web 2>&1 | tee -a "$LOG_FILE" | grep -v "^#"
+    
+    log_info "Restarting all containers..."
+    $DOCKER_COMPOSE down 2>&1 | tee -a "$LOG_FILE"
+    $DOCKER_COMPOSE up -d 2>&1 | tee -a "$LOG_FILE"
+    
+    log_info "Waiting for services to start..."
+    sleep 15
+    
+    # Wait for database
+    MAX_TRIES=30
+    COUNTER=0
+    until $DOCKER_COMPOSE exec -T db mysqladmin ping -h localhost -uroot -p"$DB_ROOT_PASS" &>/dev/null; do
+        COUNTER=$((COUNTER + 1))
+        if [ $COUNTER -gt $MAX_TRIES ]; then
+            log_warning "Database took longer than expected to start"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+    
+    log_success "Containers rebuilt and restarted"
+else
+    log_info "Restarting web container..."
+    $DOCKER_COMPOSE restart web 2>&1 | tee -a "$LOG_FILE"
+    sleep 5
+fi
 
 # Check if web is responding
 log_info "Checking web container health..."
@@ -623,6 +658,19 @@ if $DOCKER_COMPOSE exec -T web php -v &>/dev/null; then
     log_success "Web container is healthy: $PHP_VERSION"
 else
     log_warning "Web container may not be fully ready"
+fi
+
+# Check if metrics collector is running
+log_info "Checking metrics collector..."
+METRICS_PID=$($DOCKER_COMPOSE exec -T web cat /var/run/collect_metrics.pid 2>/dev/null || echo "")
+if [ -n "$METRICS_PID" ]; then
+    if $DOCKER_COMPOSE exec -T web ps -p "$METRICS_PID" &>/dev/null; then
+        log_success "Metrics collector is running (PID: $METRICS_PID)"
+    else
+        log_warning "Metrics collector PID file exists but process not found, will restart via cron"
+    fi
+else
+    log_warning "Metrics collector not running, will be started by cron within 3 minutes"
 fi
 
 # ==========================================
