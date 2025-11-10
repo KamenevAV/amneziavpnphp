@@ -95,8 +95,8 @@
       <h3 class="font-bold mb-4">{{ t('clients.create') }}</h3>
       <form method="POST" action="/servers/{{ server.id }}/clients/create" class="space-y-3" id="createClientForm">
         <div>
-          <input name="name" placeholder="{{ t('clients.name') }}" required class="w-full px-3 py-2 border rounded" id="clientName" pattern="[a-zA-Z0-9_-]+" title="Only letters, numbers, underscore and dash allowed">
-          <p class="text-xs text-gray-500 mt-1">Spaces and special characters will be replaced with underscore</p>
+          <input name="name" placeholder="{{ t('clients.name') }}" required class="w-full px-3 py-2 border rounded" id="clientName">
+          <p class="text-xs text-gray-500 mt-1">Spaces will be replaced with underscore. All characters allowed including Cyrillic.</p>
         </div>
         <div>
           <label class="block text-sm text-gray-600 mb-1">{{ t('clients.expiration') }}</label>
@@ -304,12 +304,12 @@ document.addEventListener('DOMContentLoaded', function() {
   const form = document.getElementById('createClientForm');
   const clientNameInput = document.getElementById('clientName');
   
-  // Auto-sanitize client name on input
+  // Auto-replace spaces with underscores
   if (clientNameInput) {
     clientNameInput.addEventListener('input', function(e) {
-      // Replace spaces and special characters with underscore
+      // Replace only spaces with underscore, allow all other characters including Cyrillic
       let value = e.target.value;
-      let sanitized = value.replace(/[^a-zA-Z0-9_-]/g, '_');
+      let sanitized = value.replace(/ /g, '_');
       if (value !== sanitized) {
         e.target.value = sanitized;
       }

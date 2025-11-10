@@ -21,8 +21,21 @@ date_default_timezone_set('UTC');
 // Enable error logging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', '/var/log/metrics_collector_errors.log');
 
-echo "[" . date('Y-m-d H:i:s') . "] Metrics collector started\n";
+// Write PID file for monitoring
+$pidFile = '/var/run/collect_metrics.pid';
+file_put_contents($pidFile, getmypid());
+
+// Register shutdown function to clean up PID file
+register_shutdown_function(function() use ($pidFile) {
+    if (file_exists($pidFile)) {
+        unlink($pidFile);
+    }
+});
+
+echo "[" . date('Y-m-d H:i:s') . "] Metrics collector started (PID: " . getmypid() . ")\n";
 
 // Main loop
 while (true) {
@@ -79,6 +92,12 @@ while (true) {
         
     } catch (Exception $e) {
         echo "[" . date('Y-m-d H:i:s') . "] FATAL ERROR: " . $e->getMessage() . "\n";
+        error_log("[FATAL] Metrics collector error: " . $e->getMessage());
+        echo "Retrying in 30 seconds...\n\n";
+        sleep(30);
+    } catch (Error $e) {
+        echo "[" . date('Y-m-d H:i:s') . "] CRITICAL ERROR: " . $e->getMessage() . "\n";
+        error_log("[CRITICAL] Metrics collector error: " . $e->getMessage());
         echo "Retrying in 30 seconds...\n\n";
         sleep(30);
     }

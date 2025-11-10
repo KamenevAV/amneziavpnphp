@@ -40,9 +40,9 @@ class VpnClient {
     public static function create(int $serverId, int $userId, string $name, ?int $expiresInDays = null): int {
         $pdo = DB::conn();
         
-        // Sanitize client name (replace spaces and special characters)
+        // Sanitize client name (replace only spaces with underscores, allow any other characters including Cyrillic)
         $name = trim($name);
-        $name = preg_replace('/[^a-zA-Z0-9_-]/', '_', $name);
+        $name = str_replace(' ', '_', $name);
         
         // Get server data
         $server = new VpnServer($serverId);

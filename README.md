@@ -31,12 +31,10 @@ cp .env.example .env
 # For Docker Compose V2 (recommended)
 docker compose up -d
 docker compose exec web composer install
-docker compose exec -d web php bin/collect_metrics.php
 
 # Or for older Docker Compose V1
 docker-compose up -d
 docker-compose exec web composer install
-docker-compose exec -d web php bin/collect_metrics.php
 ```
 
 Access: http://localhost:8082
@@ -141,6 +139,26 @@ curl http://localhost:8082/api/servers/1/backups \
 curl -X POST http://localhost:8082/api/servers/1/restore \
   -H "Authorization: Bearer <token>" \
   -d '{"backup_id": 123}'
+```
+
+### Automatic Monitoring and Metrics Collection
+
+**Metrics collector runs automatically** on container startup and is monitored by cron every 3 minutes. If the process crashes, it will be automatically restarted.
+
+Check metrics collector logs:
+```bash
+docker compose exec web tail -f /var/log/metrics_collector.log
+```
+
+Check monitoring script logs:
+```bash
+docker compose exec web tail -f /var/log/metrics_monitor.log
+```
+
+Restart metrics collector manually:
+```bash
+docker compose exec web pkill -f collect_metrics.php
+# It will be auto-restarted within 3 minutes by the monitoring script
 ```
 
 ### Automatic Client Expiration Check
@@ -281,4 +299,9 @@ migrations/          - SQL migrations (executed in alphabetical order)
 ## License
 
 MIT
+
+## Support the Project
+
+If you find this project helpful, you can support its development through a donation via Tribute: https://t.me/tribute/app?startapp=dzX1
+
 # amneziavpnphp

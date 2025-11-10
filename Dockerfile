@@ -36,16 +36,24 @@ COPY apache.conf /etc/apache2/sites-available/000-default.conf
 RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/public
 
-# Setup cron for client expiration and traffic limit checks (runs every hour)
+# Setup cron jobs
 RUN echo "0 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/check_expired_clients.php >> /var/log/cron.log 2>&1" > /etc/cron.d/amnezia-cron \
     && echo "0 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/check_traffic_limits.php >> /var/log/cron.log 2>&1" >> /etc/cron.d/amnezia-cron \
+    && echo "*/3 * * * * root /bin/bash /var/www/html/bin/monitor_metrics.sh >> /var/log/metrics_monitor.log 2>&1" >> /etc/cron.d/amnezia-cron \
     && chmod 0644 /etc/cron.d/amnezia-cron \
     && crontab /etc/cron.d/amnezia-cron \
-    && touch /var/log/cron.log
+    && touch /var/log/cron.log \
+    && touch /var/log/metrics_monitor.log \
+    && touch /var/log/metrics_collector.log
+
+# Make monitor script executable
+RUN chmod +x /var/www/html/bin/monitor_metrics.sh
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
 service cron start\n\
+# Start metrics collector on container startup\n\
+/bin/bash /var/www/html/bin/monitor_metrics.sh\n\
 apache2-foreground' > /start.sh \
     && chmod +x /start.sh
 
