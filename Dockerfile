@@ -20,7 +20,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" && \
+    php -r "if (hash_file('sha384', 'composer-setup.php') === 'c8b085408188070d5f52bcfe4ecfbee5f727afa458b2573b8eaaf77b3419b0bf2768dc67c86944da1544f06fa544fd47') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); exit(1); } echo PHP_EOL;" && \
+    php composer-setup.php --install-dir=/usr/bin --filename=composer && \
+    php -r "unlink('composer-setup.php');"
 
 # Set working directory
 WORKDIR /var/www/html
@@ -54,12 +57,11 @@ RUN echo "0 * * * * www-data cd /var/www/html && /usr/local/bin/php bin/check_ex
 RUN chmod +x /var/www/html/bin/monitor_metrics.sh
 
 # Create startup script
-RUN echo '#!/bin/bash\n\
-service cron start\n\
-# Start metrics collector on container startup\n\
-/bin/bash /var/www/html/bin/monitor_metrics.sh\n\
-apache2-foreground' > /start.sh \
-    && chmod +x /start.sh
+RUN echo '#!/bin/bash' > /start.sh && \
+    echo 'service cron start' >> /start.sh && \
+    echo '/bin/bash /var/www/html/bin/monitor_metrics.sh &' >> /start.sh && \
+    echo 'apache2-foreground' >> /start.sh && \
+    chmod +x /start.sh
 
 # Expose port 80
 EXPOSE 80
