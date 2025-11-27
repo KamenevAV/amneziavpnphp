@@ -12,9 +12,7 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Add role to users table
-ALTER TABLE users 
-ADD COLUMN role VARCHAR(50) DEFAULT 'viewer' AFTER ldap_dn,
-ADD INDEX idx_role (role);
+-- Add role to users table (already exists in 001_init.sql, skipping)
 
 -- Insert default roles
 INSERT IGNORE INTO user_roles (name, display_name, description, permissions) VALUES
