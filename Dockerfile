@@ -28,10 +28,11 @@ RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" &&
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy project files
-COPY . /var/www/html
+# Add git safe directory
+RUN git config --global --add safe.directory /var/www/html
 
-# Install PHP dependencies
+# Copy project files and install dependencies
+COPY . /var/www/html
 RUN composer install --no-dev --optimize-autoloader
 
 # Configure Apache
