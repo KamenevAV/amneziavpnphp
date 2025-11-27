@@ -46,6 +46,11 @@ services:
       - ./:/var/www/html
     ports:
       - "8082:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   db_data:
